@@ -1,0 +1,148 @@
+using System.Collections;
+using System.Collections.Generic;
+
+public class XOR_MLAgent
+{
+    private int inputSize;
+    private float learningRate = 0.01f;
+
+    private Matrices[] network;
+    private Matrices[] biases;
+
+    public List<Matrices> TempResults;
+    public int trainingCount = 0;
+
+    public XOR_MLAgent(int numInputs, int numOutputs, int layerSize = 0, int numLayers = 0) //Create agent
+    {
+        //Initialise
+        inputSize = numInputs;
+        biases = new Matrices[numLayers + 1]; //+ 1 for output 
+        List<Matrices> layers = new List<Matrices>();
+        TempResults = new List<Matrices>();
+
+        if(numLayers > 0) //More than one layer?
+        {
+            layers.Add(new Matrices(layerSize, numInputs, -1f, 1f)); //1st Layer set for input size
+            biases[0] = new Matrices(layerSize, 1, -1f, 1f);
+            numLayers = numLayers - 1;
+
+            for (int i = 0; i < numLayers; i++) //each following layer uses layerSize as input and output
+            {
+                layers.Add(new Matrices(layerSize, layerSize, -1f, 1f));
+                biases[i+1] = new Matrices(layerSize, 1, -1f, 1f);
+            }
+
+            layers.Add(new Matrices(numOutputs, layerSize, -1f, 1f)); //Last layer needs an output size of outputs expected
+            biases[biases.Length - 1] = new Matrices(numOutputs, 1, -1f, 1f);
+        }
+        else
+        {
+            layers.Add(new Matrices(numOutputs, numInputs + 1, -1f, 1f)); //input to output
+            biases[0] = new Matrices(numOutputs, 1, -1f, 1f);
+        }
+
+        network = new Matrices[layers.Count];
+        for (int i = 0; i < layers.Count; i++)
+        {
+            network[i] = layers[i];
+        }
+    }
+
+    public float[] ProcessInputs(float[] inputs)
+    {
+        if(inputs.Length != inputSize) //Are inputs the correct size?
+        {
+            Console.Write("Inputs do not match networks input size");
+            return null;
+        }
+
+        TempResults = new List<Matrices>();
+        Matrices input = new Matrices(inputs);
+        Matrices results = input;
+        TempResults.Add(input);
+
+        for (int i = 0; i < network.Length; i++) //multiply through each layer
+        {
+            results = network[i].Multiply(results); //multiply results against matrix
+            if (results == null)
+            {
+                Console.Write("Matrix sizes are wrong. how did we get here? Layer: " + i);
+                return null;
+            }
+
+            results = results.Add(biases[i]); //Add Biases
+            results = results.Map(Sigmoid); //Activation
+
+            TempResults.Add(results);
+        }
+        
+        float[] processedOutputs = new float[results.Rows]; //Get results ready for user
+        for (int i = 0; i < results.Rows; i++) 
+        {
+            processedOutputs[i] = results.Matrix[i, 0];
+        }
+
+        return processedOutputs;
+    }
+
+    public float[] Train(float[] inputs, float[] target)
+    {
+        Matrices targetM = new Matrices(target);
+        float[] output = ProcessInputs(inputs);
+        Matrices error = targetM.Add(new Matrices(output), true);
+
+        int resultIndex = TempResults.Count - 1;
+        for (int i = network.Length - 1; i >= 0 ; i--)
+        {
+            Matrices layer = network[i]; //Get current layer
+            Matrices layerT = layer.Transpose(); //Get a Transposed version 
+            Matrices tempError = layerT.Multiply(error); //Get error ready for next layer
+            Matrices layerOutput = TempResults[resultIndex]; //Get the layers outputs
+            Matrices layerInputT = TempResults[resultIndex - 1].Transpose(); //Get layer inputs and transpose
+            resultIndex--;
+
+            //Get Gradient (DerivativeSigmoid(x) * error * learning rate)
+            Matrices gradient = layerOutput.Map(DerivativeSignmoid);
+            gradient = gradient.HadamardProduct(error);
+            gradient.Multiply(this.learningRate);
+
+            //Calculate Delta (Gradient * layer inputs)
+            Matrices weightDeltas = gradient.Multiply(layerInputT);
+
+            //Adjust the layer
+            network[i] = layer.Add(weightDeltas); 
+            //Adjust Biases
+            biases[i] = biases[i].Add(gradient);
+
+            error = tempError; //Get error ready for next loop
+        }
+        trainingCount++;
+        return output;
+    }
+
+    private float Sigmoid(float value)
+    {
+        return (float)(1.0 / (1.0 + Math.Exp(-value)));
+    }
+    private float DerivativeSignmoid(float value) //Not exactly. value has already had sigmoid operation ran on it
+    {
+        return value * (1 - value);
+    }
+
+    public void SetLearningRate(float lr)
+    {
+        learningRate = lr;
+    }
+    public float GetLearningRate()
+    {
+        return learningRate;
+    }
+    public Matrices[] GetBiases()
+    {
+        return biases;
+    }
+    public Matrices[] GetNetwork()
+    {
+        return network;
+    }
+}
